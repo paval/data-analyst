@@ -1,0 +1,297 @@
+1.
+with customer_daily_totals as (
+select o.cust_id,o.order_date,SUM(o.total_order_cost) as total_daily_cost
+from orders o
+where o.order_date between '2019-02-01' and '2019-05-01'
+GROUP BY o.cust_id,o.order_date
+),
+ranked_daily_total as(
+select
+ cust_id,
+ order_date,
+ total_daily_cost,
+ RANK() OVER (
+ PARTITION BY order_date
+ ORDER BY total_daily_cost DESC
+ )as rnk
+ FROM customer_daily_totals
+)
+select
+c.first_name,
+rdt.order_date,
+rdt.total_daily_cost
+from ranked_daily_total rdt
+join customers c on rdt.cust_id=c.id
+where rdt.rnk=1
+order by rdt.order_date;
+
+2.
+with launches as(
+select company_name,
+year
+from car_launches
+)
+select company_name,
+COUNT(CASE WHEN year=2020 THEN 1 END) -COUNT(CASE WHEN year=2019 THEN 1 END)
+as total_launch
+from launches
+group by company_name;
+
+3.
+with consecutive_days as
+(select user_id,
+record_date,
+LAG(record_date,1)OVER(PARTITION BY user_id ORDER BY record_date) as prev_day,
+LEAD(record_date,1)OVER(PARTITION BY user_id ORDER BY record_date)as next_day
+from sf_events
+)
+select distinct user_id
+from consecutive_days
+where DATEDIFF(record_date,prev_day)=1
+and DATEDIFF(next_day,record_date)=1;
+
+4.
+
+select ABS(max(case when dept.department='marketing' then emp.salary end)-max(case when dept.department='engineering' then emp.salary end)) as salary_difference
+from db_employee emp
+join db_dept dept on emp.department_id=dept.id where dept.department in('marketing', 'engineering');
+
+5.
+
+with cte as
+(select date_format(invoicedate,'%m')as 'month',description,sum(quantity*unitprice)"total_paid",dense_rank()over (partition by  date_format(invoicedate,'%m') order by sum(quantity*unitprice) desc)as "rnk"
+from online_retail
+group by 1,2
+order by 1,2)
+select month,description,total_paid
+from cte
+where rnk=1;
+
+6.
+
+with comments as(select country,sum(case when date_format (created_at,'%Y-%m')='2019-12' then (number_of_comments) else 0 end )dec_comments,
+sum(case when DATE_FORMAT(created_at,'%Y-%m')='2020-01' then (number_of_comments)else 0 end)jan_comments
+from fb_comments_count c
+join fb_active_users a
+on c.user_id=a.user_id
+where date_format(created_at,'%Y-%m')between '2019-12' and '2020-01'
+group by 1
+)
+select country
+from (select country,dense_rank() over (order by (jan_comments-dec_comments)desc)rnk from comments) w
+where rnk=1
+
+7.
+
+select id,first_name,last_name,department_id,salary from(select *,row_number() over (partition by id order by salary desc,department_id desc) as rn from ms_employee_salary)s
+where rn=1
+order by id asc;
+
+8.
+
+SELECT
+    month,
+    AVG(revenue) OVER (ORDER BY month ASC ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rolling_average
+FROM
+
+    (
+        SELECT
+            DATE_FORMAT(created_at, '%Y-%m') AS month,
+            SUM(purchase_amt) AS revenue
+        FROM amazon_purchases
+        WHERE purchase_amt > 0
+        GROUP BY 1
+        ORDER BY 1
+    ) AS monthly_revenue
+
+9.
+
+SELECT
+    month,
+    AVG(revenue) OVER (ORDER BY month ASC ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rolling_average
+FROM
+
+    (
+        SELECT
+            DATE_FORMAT(created_at, '%Y-%m') AS month,
+            SUM(purchase_amt) AS revenue
+        FROM amazon_purchases
+        WHERE purchase_amt > 0
+        GROUP BY 1
+        ORDER BY 1
+    ) AS monthly_revenue
+	
+10.
+
+with daily as(
+select distinct user_id,date(created_at) as purchase_date from amazon_transactions),
+ranked as(
+select user_id,purchase_date,row_number() over (partition by user_id order by purchase_date) as rn from daily),
+first_two as(
+select user_id,max(case when rn=1 then purchase_date end) as first_date,
+max(case when rn=2 then purchase_date end) as second_date from ranked where rn<=2 group by user_id)
+select user_id
+from first_two
+where second_date is not null
+and datediff(second_date,first_date) between 1 and 7
+order by user_id;
+
+11.
+
+select b.worker_title as best_paid_title
+from worker a
+join title b on a.worker_id=b.worker_ref_id
+where a.salary=(
+select max(w.salary) from worker w join title t on w.worker_id=t.worker_ref_id )
+order by best_paid_title;
+
+12.
+
+select date_format(created_at,'%Y-%m') as ym,
+  round((sum(value)-lag(sum(value)) over())/lag(sum(value)) over()*100,2) 
+  as revenue_diff
+  from sf_transactions
+  group by ym
+  order by ym
+  
+13.
+
+select bike_number,max(end_time) as last_used
+from dc_bikeshare_q1_2012
+group by bike_number
+order by last_used desc
+
+14.
+
+with dept_avg as
+(select department,avg(salary) as avg_salary
+from employee
+group by department)
+select e.department,
+e.first_name,e.salary,d.avg_salary from employee e join dept_avg d on e.department =d.department order by e.department;
+
+15.
+
+SELECT c.first_name,
+       c.last_name,
+       c.city,
+       o.order_details
+FROM customers c
+LEFT JOIN orders o ON o.cust_id = c.id
+ORDER BY c.first_name,
+         o.order_details;
+		 
+16.
+
+with employee_average as (
+ select employee_id,employee_name,avg(customer_satisfaction) as avg_satisfaction
+     from amazon_support_tickets
+     where resolution_status='resolved'
+     and customer_satisfaction is not null
+     group by employee_id,employee_name
+),
+ranked_employees as (
+  select employee_id,employee_name,avg_satisfaction,
+   DENSE_RANK() OVER (ORDER BY avg_satisfaction DESC)as employee_rank from employee_average
+)
+select employee_id,
+       employee_name,
+       avg_satisfaction,
+       employee_rank
+    from ranked_employees
+    where employee_rank <=3;
+	
+17.
+
+with ordered as
+(select user_id,
+   date(created_at) as tx_date,
+   lag(date(created_at)) over (partition by user_id order by created_at)as prev_date
+   from amazon_transactions)
+  select distinct user_id
+  from ordered
+  where prev_date is not null
+  and datediff(tx_date,prev_date)>0
+  and datediff(tx_date,prev_date)<=7;
+  
+18.
+
+WITH filtered_orders AS (
+    SELECT
+        stage_of_order,
+        quantity,
+        DATE_SUB(week, INTERVAL(CASE
+            WHEN WEEKDAY(week) = 6 THEN 0
+            ELSE WEEKDAY(week) + 1
+        END) day) AS week_start
+    FROM orders_analysis
+    WHERE
+        QUARTER(week) = 1
+        AND YEAR(week) = 2023
+)
+
+SELECT
+    DATE_FORMAT(week_start, '%Y-%m-%d') AS week,
+    SUM(quantity) AS total_quantity
+FROM filtered_orders
+GROUP BY week_start
+ORDER BY week_start;
+
+19.
+
+with january_sales as  
+(select * from sales_data
+where month(sales_date)=1
+and year(sales_date)=2024),
+
+ranked_sales as 
+(select *, dense_rank() over (partition by product_category order by total_sales desc)as sales_rank from january_sales)
+select product_category,seller_id,total_sales,market_place,sales_date,sales_rank from ranked_sales
+where sales_rank<=3
+order by product_category,sales_rank;
+
+20.
+WITH user_activity_with_time_period AS
+  (SELECT start_timestamp,
+          end_timestamp,
+          user_count,
+          device_type,
+          CONCAT(start_timestamp, ' to ', end_timestamp) AS time_period
+   FROM user_activity),
+     ranked_user_activity AS
+  (SELECT *,
+          RANK() OVER (PARTITION BY device_type
+                       ORDER BY user_count DESC) AS `rank`
+   FROM user_activity_with_time_period)
+SELECT user_count,
+       time_period,
+       device_type
+FROM ranked_user_activity
+WHERE `rank` = 1;
+
+21.
+
+SELECT
+    fs.flight_id,
+    ec.movie_id,
+    ec.duration AS movie_duration
+FROM
+    flight_schedule AS fs
+INNER JOIN
+    entertainment_catalog AS ec
+    ON fs.flight_duration >= ec.duration
+WHERE
+    fs.flight_id = 101
+ORDER BY
+    ec.duration;
+
+	
+22.
+
+SELECT SUM(sales_revenue) AS total_revenue
+FROM
+    sales_performance
+WHERE
+    salesperson = 'Samantha'
+    OR salesperson = 'Lisa';
+
